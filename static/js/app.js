@@ -217,31 +217,15 @@ document.querySelectorAll(".default-campaign-card").forEach((card) => {
   card.addEventListener("click", () => selectDefaultCampaign(card.dataset.gender, card.dataset.src));
 });
 
+/**
+ * There is one fixed campaign image now, so the detected gender no longer
+ * picks between campaigns. It's passed to the backend instead, so the prompt
+ * can dress the replacement person in a black suit cut for their own build —
+ * the campaign shot stays the same either way.
+ */
 function applyGenderSuggestion(gender) {
   state.suggestedGender = gender;
-  const genderToDefault = { male: "man", female: "woman" };
-  const suggestedDefault = genderToDefault[gender];
-
-  document.querySelectorAll(".default-campaign-card").forEach((card) => {
-    card.querySelector(".dc-suggested").classList.toggle("hidden", card.dataset.gender !== suggestedDefault);
-  });
-
-  const hint = el("defaultCampaignsHint");
-  if (!suggestedDefault) {
-    hint.textContent = "";
-    return;
-  }
-
-  if (!state.campaignFile) {
-    // Nothing chosen yet — auto-apply the suggested default.
-    const card = document.getElementById(suggestedDefault === "woman" ? "dcWoman" : "dcMan");
-    selectDefaultCampaign(card.dataset.gender, card.dataset.src);
-    hint.textContent = `Detected a ${gender === "male" ? "male" : "female"} reference photo — applied the matching default campaign.`;
-  } else if (state.campaignSource !== `default-${suggestedDefault}`) {
-    hint.textContent = `Detected a ${gender === "male" ? "male" : "female"} reference photo — you can switch to the ${suggestedDefault} default above if you'd like.`;
-  } else {
-    hint.textContent = "";
-  }
+  state.settings.personGender = gender;
 }
 
 /* ---------------- Person upload ---------------- */
@@ -278,10 +262,9 @@ el("personRemoveBtn").addEventListener("click", () => {
   state.personFile = null;
   state.personImg = null;
   state.suggestedGender = null;
+  delete state.settings.personGender;
   el("personPreview").classList.add("hidden");
   el("personUploader").classList.remove("hidden");
-  document.querySelectorAll(".dc-suggested").forEach((b) => b.classList.add("hidden"));
-  el("defaultCampaignsHint").textContent = "";
   updateReplaceButtonState();
 });
 el("personReplaceBtn").addEventListener("click", () => el("personInput").click());
@@ -508,3 +491,6 @@ el("shareModal").addEventListener("click", (e) => {
 
 initBeforeAfterSlider();
 refreshStatus();
+
+// One fixed campaign image, applied on load — the user only uploads a person.
+selectDefaultCampaign("man", "/static/assets/campaigns/man.png");

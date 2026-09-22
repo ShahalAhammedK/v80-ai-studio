@@ -34,44 +34,29 @@
     </div>
   </section>
 
-  <section class="section container">
-    <div class="section-bg">
-      <div class="section-head"><span class="section-num">1</span><span class="section-title">Select the Version for V80</span></div>
-      <p class="section-desc">Choose the V80 campaign version you want to use. This is your master image — everything outside the person will be preserved.</p>
-
-      <div class="default-campaigns" id="defaultCampaigns">
-        <div class="default-campaigns-row">
-          <button type="button" class="default-campaign-card" id="dcWoman" data-gender="woman" data-src="/static/assets/campaigns/woman.png" aria-label="Use default V80 campaign — woman">
-            <img src="/static/assets/campaigns/woman.png" alt="Default V80 campaign featuring a woman" />
-            <span class="dc-suggested hidden">Suggested</span>
-            <span class="dc-name">Woman</span>
-          </button>
-          <button type="button" class="default-campaign-card" id="dcMan" data-gender="man" data-src="/static/assets/campaigns/man.png" aria-label="Use default V80 campaign — man">
-            <img src="/static/assets/campaigns/man.png" alt="Default V80 campaign featuring a man" />
-            <span class="dc-suggested hidden">Suggested</span>
-            <span class="dc-name">Man</span>
-          </button>
-        </div>
-        <p class="default-campaigns-hint" id="defaultCampaignsHint"></p>
-      </div>
-
-      <div id="campaignPreview" class="card preview-card hidden" style="margin-top:16px;">
-        <div class="preview-thumb"><img id="campaignPreviewImg" alt="Campaign preview" /></div>
-        <div class="preview-meta">
-          <div class="label">Campaign Image</div>
-          <div class="name" id="campaignFileName"></div>
-          <div class="size" id="campaignFileSize"></div>
-        </div>
-        <div class="preview-actions">
-          <button class="btn btn-danger btn-sm" id="campaignRemoveBtn">Remove</button>
-        </div>
-      </div>
+  <!--
+    The campaign image is fixed: there is one V80 master shot and it is applied
+    automatically on load (see selectDefaultCampaign in app.js). This block is
+    kept in the DOM, hidden, because the app still reads the campaign source
+    and preview nodes below — it is not a user-facing step any more.
+  -->
+  <div class="hidden" hidden aria-hidden="true">
+    <button type="button" class="default-campaign-card" id="dcMan" data-gender="man" data-src="/static/assets/campaigns/man.png">
+      <img src="/static/assets/campaigns/man.png" alt="" />
+      <span class="dc-name">Man</span>
+    </button>
+    <p id="defaultCampaignsHint"></p>
+    <div id="campaignPreview" class="hidden">
+      <img id="campaignPreviewImg" alt="" />
+      <div id="campaignFileName"></div>
+      <div id="campaignFileSize"></div>
+      <button id="campaignRemoveBtn" type="button">Remove</button>
     </div>
-  </section>
+  </div>
 
   <section class="section container">
     <div class="section-bg">
-      <div class="section-head"><span class="section-num">2</span><span class="section-title">Upload New Person</span></div>
+      <div class="section-head"><span class="section-num">1</span><span class="section-title">Upload New Person</span></div>
       <p class="section-desc">Upload a clear photo of the person you want to place into the campaign. You don't need to remove the background yourself.</p>
 
       <div id="personUploader" class="uploader" tabindex="0" role="button" aria-label="Upload person photo">
@@ -111,7 +96,7 @@
 
   <section class="section container">
     <div class="section-bg">
-      <div class="section-head"><span class="section-num">3</span><span class="section-title">Review Mask</span></div>
+      <div class="section-head"><span class="section-num">2</span><span class="section-title">Review Mask</span></div>
       <p class="section-desc">We generate a mask around the person automatically. Use Edit Mask to correct hair, hands, clothing or anything missed.</p>
 
       <div class="mask-review">

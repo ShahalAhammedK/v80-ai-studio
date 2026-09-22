@@ -46,6 +46,7 @@ def replace_person_gemini(
         settings.get("scenePreservation", "maximum"),
         settings.get("keepPose", True),
         settings.get("matchLighting", True),
+        settings.get("personGender"),
     )
     prompt = (
         "The FIRST image is the campaign photo (the master image). The SECOND image is the "

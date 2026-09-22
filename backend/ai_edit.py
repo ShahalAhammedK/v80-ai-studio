@@ -47,7 +47,48 @@ SCENE_INSTRUCTIONS = {
 }
 
 
-def build_prompt(identity_preservation: str, scene_preservation: str, keep_pose: bool, match_lighting: bool) -> str:
+GENDER_WORDS = {
+    "male": ("man", "his"),
+    "female": ("woman", "her"),
+}
+
+
+def build_gender_line(person_gender: str | None) -> str:
+    """
+    The single campaign image shows a man, so the model tends to reproduce a
+    man regardless of the reference photo. When gender detection gives us a
+    confident answer we say it outright; otherwise we just point at the
+    reference and let the model read it.
+    """
+    words = GENDER_WORDS.get((person_gender or "").lower())
+    if words is None:
+        return (
+            "CRITICAL — GENDER: Take the replacement person's gender from the REFERENCE photo, "
+            "not from the original campaign subject. If the reference person is a woman, the result "
+            "must clearly be a woman; if a man, clearly a man."
+        )
+
+    noun, possessive = words
+    line = (
+        f"CRITICAL — GENDER: The reference person is a {noun}. The result MUST clearly be a {noun}, "
+        f"with {possessive} face, hair, body build and silhouette."
+    )
+    if noun == "woman":
+        # Only worth saying when it contradicts the campaign shot, which is a man.
+        line += (
+            " The original campaign subject is a man — do NOT carry that over. Replacing him with a "
+            "woman is the intent, not an error to correct."
+        )
+    return line
+
+
+def build_prompt(
+    identity_preservation: str,
+    scene_preservation: str,
+    keep_pose: bool,
+    match_lighting: bool,
+    person_gender: str | None = None,
+) -> str:
     identity_line = IDENTITY_INSTRUCTIONS.get(identity_preservation, IDENTITY_INSTRUCTIONS["high"])
     scene_line = SCENE_INSTRUCTIONS.get(scene_preservation, SCENE_INSTRUCTIONS["maximum"])
     pose_line = (
@@ -63,7 +104,11 @@ def build_prompt(identity_preservation: str, scene_preservation: str, keep_pose:
         else "Light the replacement person naturally, staying close to the original mood."
     )
 
+    gender_line = build_gender_line(person_gender)
+
     return f"""Replace ONLY the human subject in the first image (the campaign image) with the person shown in the second image (the reference image).
+
+{gender_line}
 
 CRITICAL — POSTURE: Before anything else, look closely at exactly how the original subject is posed: which arm (if any) is crossed over the body, which hand (if any) is in a pocket, exactly where a hand or arm touches the product, the angle of the head, the stance of the legs. Reproduce that EXACT posture and limb arrangement in the result. A common failure is defaulting to a generic "leaning casually with one hand in a pocket" pose — do NOT do this unless that is literally what the original image shows. If the original subject's arms are crossed/folded, the result's arms must also be crossed/folded in the same way.
 
@@ -77,7 +122,7 @@ CRITICAL — COMPLETENESS: The person must be rendered complete and anatomically
 
 Do NOT copy the reference photo's clothing, outfit, accessories, background, or setting — ignore what the reference person is wearing and ignore where the reference photo was taken entirely. Clothing comes from the instruction below, not from the reference photo.
 
-Dress the replacement person in a tailored, premium outfit matching the ORIGINAL campaign subject's style and formality (for example, if the original wears a tailored black suit, dress the replacement person in the same style of tailored black suit, fitted to their own body build) — not the casual clothing from the reference photo.
+Dress the replacement person in a tailored black suit — the same premium, formal style the original campaign subject wears, tailored to the replacement person's own gender and body build (a men's cut for a man, a women's cut for a woman). Black suit in both cases. Not the casual clothing from the reference photo.
 
 Preserve the original campaign image everywhere outside the person. {scene_line}
 
@@ -180,6 +225,7 @@ def _replace_person_openai(
         settings.get("scenePreservation", "maximum"),
         settings.get("keepPose", True),
         settings.get("matchLighting", True),
+        settings.get("personGender"),
     )
 
     campaign_bytes = image_to_png_bytes(fitted_campaign)
