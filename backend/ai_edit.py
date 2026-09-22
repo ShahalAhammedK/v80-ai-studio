@@ -165,7 +165,7 @@ def replace_person(
     automatically retries with that one before giving up.
     """
     providers = _provider_order()
-    last_error: UserFacingError | None = None
+    primary_error: UserFacingError | None = None
 
     for i, provider in enumerate(providers):
         try:
@@ -175,9 +175,14 @@ def replace_person(
             return result
         except UserFacingError as exc:
             logger.warning("Image provider '%s' failed (%s): %s", provider, exc.status_code, exc.message)
-            last_error = exc
+            if primary_error is None:
+                primary_error = exc
 
-    raise last_error
+    # Report the PRIMARY provider's failure, not the last fallback's. Reporting
+    # the last one meant a configured-but-exhausted fallback masked the real
+    # cause: with IMAGE_PROVIDER=openai and a dead Gemini key, every OpenAI
+    # failure surfaced as Gemini's "out of quota" message instead.
+    raise primary_error
 
 
 def _replace_person_openai(
