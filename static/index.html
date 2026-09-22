@@ -56,7 +56,7 @@
 
   <section class="section container">
     <div class="section-bg">
-      <div class="section-head"><span class="section-num">1</span><span class="section-title">Upload New Person</span></div>
+      <div class="section-head"><span class="section-title">Upload New Person</span></div>
       <p class="section-desc">Upload a clear photo of the person you want to place into the campaign. You don't need to remove the background yourself.</p>
 
       <div id="personUploader" class="uploader" tabindex="0" role="button" aria-label="Upload person photo">
@@ -94,23 +94,18 @@
     </div>
   </section>
 
-  <section class="section container">
-    <div class="section-bg">
-      <div class="section-head"><span class="section-num">2</span><span class="section-title">Review Mask</span></div>
-      <p class="section-desc">We generate a mask around the person automatically. Use Edit Mask to correct hair, hands, clothing or anything missed.</p>
-
-      <div class="mask-review">
-        <div class="mask-preview-box">
-          <img id="maskBaseImg" alt="Campaign with mask preview" />
-          <canvas id="maskThumbCanvas"></canvas>
-        </div>
-        <div>
-          <div class="mask-status" id="maskStatus">Choose a V80 version to generate a mask.</div>
-          <button class="btn btn-primary" id="editMaskBtn" disabled>Edit Mask</button>
-        </div>
-      </div>
-    </div>
-  </section>
+  <!--
+    Mask review is hidden. The campaign image is fixed and its mask is
+    precomputed and committed (backend/precomputed_masks.py), so there is
+    nothing for the user to correct. The nodes stay in the DOM because the
+    mask still drives generation and the editor remains available in code.
+  -->
+  <div class="hidden" hidden aria-hidden="true">
+    <img id="maskBaseImg" alt="" />
+    <canvas id="maskThumbCanvas"></canvas>
+    <div id="maskStatus"></div>
+    <button type="button" id="editMaskBtn" disabled>Edit Mask</button>
+  </div>
 
   <section class="section container">
     <div class="card">

@@ -129,6 +129,8 @@ async function handleCampaignFile(file, source = "upload") {
   el("editMaskBtn").disabled = true;
   updateReplaceButtonState();
 
+  // The mask panel is hidden now, so a failure here would otherwise leave the
+  // Replace button disabled with nothing on screen explaining why — surface it.
   try {
     const result = await segmentCampaign(file);
     if (result.available && result.mask) {
@@ -136,9 +138,11 @@ async function handleCampaignFile(file, source = "upload") {
       el("maskStatus").textContent = "Person detected automatically. Review and adjust if needed.";
     } else {
       el("maskStatus").textContent = "Automatic detection isn't available — please paint the mask manually.";
+      showToast("We couldn't prepare the campaign image. Please reload the page and try again.");
     }
   } catch (e) {
     el("maskStatus").textContent = "Automatic detection failed — please paint the mask manually.";
+    showToast("We couldn't prepare the campaign image. Please reload the page and try again.");
   }
 
   el("editMaskBtn").disabled = false;
