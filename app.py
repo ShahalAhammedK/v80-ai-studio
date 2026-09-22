@@ -15,6 +15,7 @@ from backend.config import GEMINI_API_KEY, IMAGE_PROVIDER, OPENAI_API_KEY
 from backend.errors import UserFacingError
 from backend.gender_detect import detect_gender
 from backend.image_utils import image_to_png_bytes, validate_upload
+from backend.precomputed_masks import count as precomputed_mask_count, lookup as lookup_precomputed_mask
 from backend.rate_limit import check_rate_limit
 from backend.segmentation import generate_person_mask, is_installed as segmentation_installed
 
@@ -54,7 +55,7 @@ async def health():
     return {
         "aiReady": bool(GEMINI_API_KEY) or bool(OPENAI_API_KEY),
         "imageProvider": IMAGE_PROVIDER,
-        "autoMaskAvailable": segmentation_installed(),
+        "autoMaskAvailable": precomputed_mask_count() > 0 or segmentation_installed(),
     }
 
 
@@ -63,7 +64,12 @@ async def segment(campaign: UploadFile):
     data = await campaign.read()
     image = validate_upload(campaign.filename, campaign.content_type, data)
 
-    mask = await run_in_threadpool(generate_person_mask, image)
+    # The built-in campaigns have committed masks, so the common path needs no
+    # model, no download and no meaningful RAM. Anything else falls through to
+    # live segmentation, which is a no-op when rembg isn't installed.
+    mask = await run_in_threadpool(lookup_precomputed_mask, data, image.size)
+    if mask is None:
+        mask = await run_in_threadpool(generate_person_mask, image)
     if mask is None:
         return {"available": False, "mask": None}
 

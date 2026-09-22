@@ -6,5 +6,9 @@ numpy>=2.0
 openai>=1.59
 google-genai>=1.0
 python-dotenv>=1.0
-rembg>=2.0.63
-onnxruntime>=1.20
+
+# Live person segmentation. NOT needed in production: the built-in campaign
+# images ship with precomputed masks (see backend/precomputed_masks.py), and
+# these pull in ~320MB of deps plus ~176MB of weights and ~1GB of peak RAM.
+# Install them only to regenerate a mask after changing a campaign image:
+#   pip install -r requirements-dev.txt

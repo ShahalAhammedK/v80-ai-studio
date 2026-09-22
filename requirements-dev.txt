@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Only needed to regenerate precomputed campaign masks (scripts/make_masks.py).
+rembg>=2.0.63
+onnxruntime>=1.20
