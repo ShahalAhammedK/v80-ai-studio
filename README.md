@@ -10,10 +10,11 @@ frontend) so it runs without installing Node.js.
 
 ## How it works
 
-1. **Upload** the campaign image (master image) and a person reference photo.
-2. The backend generates an automatic **person mask** using `rembg`'s
-   human-segmentation model (`backend/segmentation.py`) — trained specifically
-   to isolate people, so it doesn't grab the logo/V/text.
+1. **Pick** a built-in V80 campaign image and upload a person reference photo.
+2. The backend looks up that campaign's **person mask**, precomputed and
+   committed alongside the image (`backend/precomputed_masks.py`). Anything not
+   in that set falls back to live `rembg` segmentation
+   (`backend/segmentation.py`) where it's installed.
 3. You can open **Edit Mask** (`static/js/maskEditor.js`) to brush/erase the
    mask by hand — useful for stray hair, hands, or anything auto-detection missed.
 4. Clicking **Replace Person with AI** sends the campaign image, the person
@@ -61,10 +62,32 @@ python app.py
 
 5. Open <http://localhost:8000>.
 
-The first campaign upload will download the `u2net_human_seg` segmentation
-model (~180MB, one-time, cached by `rembg`). If that download fails or is
-skipped, automatic masking is simply disabled and the app falls back to the
-manual mask editor — it never fakes a mask.
+Masks for the built-in campaigns are committed, so nothing is downloaded at
+runtime and `requirements.txt` stays slim (no `rembg`/`onnxruntime`, which
+together cost ~500MB and ~1GB of peak RAM).
+
+### Changing a campaign image
+
+After adding or replacing anything in `static/assets/campaigns/`, regenerate
+its mask and commit the result:
+
+```bash
+pip install -r requirements-dev.txt
+python scripts/make_masks.py
+```
+
+Masks are keyed by a SHA-256 of the campaign file's bytes, computed from disk
+at import — so a stale mask can't silently survive a swapped image. If a
+campaign has no matching mask and `rembg` isn't installed, automatic masking is
+simply disabled and the app falls back to the manual mask editor — it never
+fakes a mask.
+
+## Deploying
+
+A `Dockerfile` and `render.yaml` are included; the image is ~250MB and runs in
+~250MB of RAM, so it fits a free/small tier. Set `OPENAI_API_KEY` (and
+optionally `EXPLABS_API_KEY`, `GEMINI_API_KEY`) as secrets in the host's
+dashboard — never in the repo.
 
 ## Project structure
 
@@ -74,7 +97,8 @@ backend/
   config.py                Env vars (API key, model name, limits)
   errors.py                UserFacingError — safe messages returned to the browser
   image_utils.py           Validation, resizing, mask conversion, final compositing
-  segmentation.py          Automatic person mask via rembg (human segmentation model)
+  precomputed_masks.py     Committed masks for the built-in campaigns (no model needed)
+  segmentation.py          Fallback person mask via rembg (dev/custom images only)
   ai_edit.py                Prompt construction + OpenAI images.edit call
   rate_limit.py             Simple in-memory per-IP rate limiting
 static/

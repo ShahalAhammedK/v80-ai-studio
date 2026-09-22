@@ -1,15 +1,14 @@
 services:
   - type: web
     name: v80-ai-studio
-    runtime: python
+    # Docker, to match the committed Dockerfile — it pins Python 3.11 and owns
+    # the install and start commands, so they aren't duplicated here.
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     plan: free
     region: singapore
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.9"
       # Secrets are set in the Render dashboard, never committed here.
       - key: OPENAI_API_KEY
         sync: false
