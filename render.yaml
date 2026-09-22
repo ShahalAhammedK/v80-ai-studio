@@ -9,9 +9,22 @@ services:
     region: singapore
     healthCheckPath: /api/health
     envVars:
-      # Secrets are set in the Render dashboard, never committed here.
+      # ---------------------------------------------------------------------
+      # WARNING: live API key committed below, at the repo owner's explicit
+      # request, in a PUBLIC repository.
+      #
+      # Expect this key to be found by automated scrapers and revoked by
+      # OpenAI. When the app starts reporting rejected credentials, that is
+      # what happened -- issue a new key at
+      # https://platform.openai.com/api-keys and set it in the Render
+      # dashboard (Environment -> OPENAI_API_KEY) rather than here.
+      #
+      # Deleting this line later does NOT unpublish the key: it remains in
+      # git history, in every fork, and in any clone already taken. Revoking
+      # it at OpenAI is the only action that actually disables it.
+      # ---------------------------------------------------------------------
       - key: OPENAI_API_KEY
-        sync: false
+        value: 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
       - key: IMAGE_MODEL
         value: gpt-image-2.5-sunburst
       - key: IMAGE_PROVIDER
