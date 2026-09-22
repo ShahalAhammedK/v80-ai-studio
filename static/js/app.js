@@ -1,7 +1,6 @@
 import { getHealth, segmentCampaign, replacePerson, detectGender } from "./api.js";
 import { showToast } from "./toast.js";
 import { MaskEditor } from "./maskEditor.js";
-import { initBeforeAfterSlider } from "./slider.js";
 import { downloadImage, dataUrlToBlob, copyImage, shareToPlatform } from "./share.js";
 
 const MAX_FILE_MB = 12;
@@ -307,7 +306,6 @@ async function openMaskEditor() {
 }
 
 el("editMaskBtn").addEventListener("click", openMaskEditor);
-el("editMaskAgainBtn").addEventListener("click", openMaskEditor);
 
 /* ---------------- Replace button state ---------------- */
 
@@ -376,8 +374,7 @@ function showResult() {
   const gen = state.generations[state.activeGeneration];
   if (!gen) return;
 
-  el("sliderBefore").src = state.campaignImg.src;
-  el("sliderAfter").src = gen.dataUrl;
+  el("resultImg").src = gen.dataUrl;
   el("resultSection").classList.remove("hidden");
   el("resultSection").scrollIntoView({ behavior: "smooth", block: "start" });
 
@@ -401,7 +398,7 @@ function renderGenerationsRow() {
     thumb.appendChild(img);
     thumb.addEventListener("click", () => {
       state.activeGeneration = idx;
-      el("sliderAfter").src = gen.dataUrl;
+      el("resultImg").src = gen.dataUrl;
       renderGenerationsRow();
     });
     row.appendChild(thumb);
@@ -493,7 +490,6 @@ el("shareModal").addEventListener("click", (e) => {
 
 /* ---------------- Init ---------------- */
 
-initBeforeAfterSlider();
 refreshStatus();
 
 // One fixed campaign image, applied on load — the user only uploads a person.

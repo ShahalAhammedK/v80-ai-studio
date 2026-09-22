@@ -319,27 +319,14 @@ input[type=file] { display: none; }
 /* Result */
 .result-heading { text-align: center; margin-bottom: 28px; }
 .result-heading h2 { font-size: 28px; font-weight: 800; letter-spacing: -.01em; }
-.slider-wrap {
-  position: relative; max-width: 640px; margin: 0 auto; border-radius: var(--radius-lg); overflow: hidden;
-  box-shadow: var(--shadow-md); aspect-ratio: 4/5; user-select: none; touch-action: none;
+/* The finished image on its own. No fixed aspect-ratio and no object-fit:
+   cover here — the campaign art is 2:3 and cropping it cut off the V80
+   wordmark. Let the image set its own height so it is always shown whole. */
+.result-image-wrap {
+  max-width: 640px; margin: 0 auto; border-radius: var(--radius-lg); overflow: hidden;
+  box-shadow: var(--shadow-md); line-height: 0;
 }
-.slider-wrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.slider-after-clip { position: absolute; inset: 0; overflow: hidden; }
-.slider-handle {
-  position: absolute; top: 0; bottom: 0; width: 3px; background: #fff; left: 50%;
-  box-shadow: 0 0 0 1px rgba(0,0,0,.08);
-}
-.slider-handle::after {
-  content: "";
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  width: 42px; height: 42px; border-radius: 50%; background: #fff;
-  box-shadow: var(--shadow-md);
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230057ff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='9 18 15 12 9 6'></polyline><polyline points='15 18 9 12 15 6' transform='translate(-6,0)'></polyline></svg>");
-  background-repeat: no-repeat; background-position: center; background-size: 20px;
-}
-.slider-label { position: absolute; top: 14px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 6px 10px; border-radius: 999px; background: rgba(11,21,51,.55); color: #fff; }
-.slider-label.left { left: 14px; }
-.slider-label.right { right: 14px; }
+.result-image-wrap img { display: block; width: 100%; height: auto; }
 
 .result-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 22px 0; }
 
