@@ -1,0 +1,12 @@
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.env
+.env.local
+temp/*
+!temp/.gitkeep
+.git/
+.claude/
+*.onnx

@@ -1,0 +1,10 @@
+fastapi>=0.115
+uvicorn[standard]>=0.34
+python-multipart>=0.0.20
+Pillow>=11.0
+numpy>=2.0
+openai>=1.59
+google-genai>=1.0
+python-dotenv>=1.0
+rembg>=2.0.63
+onnxruntime>=1.20
