@@ -26,7 +26,9 @@ def _get_client() -> OpenAI:
     global _client
     if not OPENAI_API_KEY:
         raise UserFacingError(
-            "The AI service isn't configured yet. Add OPENAI_API_KEY to your .env file.", 503
+            "The AI service isn't configured yet. Set OPENAI_API_KEY in the server's "
+            "environment variables (or .env.local when running locally).",
+            503,
         )
     if _client is None:
         _client = OpenAI(api_key=OPENAI_API_KEY)
