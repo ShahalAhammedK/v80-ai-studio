@@ -432,19 +432,6 @@ el("downloadBtn").addEventListener("click", () => {
   downloadImage(gen.dataUrl, el("formatSelect").value);
 });
 
-el("downloadOriginalBtn").addEventListener("click", () => {
-  if (!state.campaignImg) return;
-  downloadImage(state.campaignImg.src.startsWith("data:") ? state.campaignImg.src : toDataUrl(state.campaignImg), "png");
-});
-
-function toDataUrl(imgEl) {
-  const c = document.createElement("canvas");
-  c.width = imgEl.naturalWidth;
-  c.height = imgEl.naturalHeight;
-  c.getContext("2d").drawImage(imgEl, 0, 0);
-  return c.toDataURL("image/png");
-}
-
 /* ---------------- Share ---------------- */
 
 document.querySelectorAll(".share-btn").forEach((btn) => {
