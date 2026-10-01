@@ -165,9 +165,37 @@ def _shrink(mask, radius: int):
     return ~_grow(~mask, radius)
 
 
+def _connected(seed, allowed, block: int):
+    """
+    The parts of `allowed` that are 8-connected to `seed` (through `allowed`).
+
+    Worked out on a grid of `block`x`block` cells, so it is a few hundred cheap
+    steps on a small array rather than a flood fill over every pixel. Two
+    blobs within about one cell of each other count as connected.
+    """
+    import numpy as np
+
+    h, w = allowed.shape
+    gh, gw = -(-h // block), -(-w // block)
+
+    def cells(mask):
+        padded = np.zeros((gh * block, gw * block), bool)
+        padded[:h, :w] = mask
+        return padded.reshape(gh, block, gw, block).any(axis=(1, 3))
+
+    reach = cells(seed)
+    passable = cells(allowed) | reach
+    while True:
+        grown = _grow(reach, 1) & passable
+        if not (grown != reach).any():
+            break
+        reach = grown
+    return allowed & np.repeat(np.repeat(reach, block, axis=0), block, axis=1)[:h, :w]
+
+
 # Tuned against real generations of the V80 Lite campaign.
 ADAPTIVE = {
-    "search_radius": 90,   # how far from the old person the new one may extend
+    "link_block": 4,       # cell size (px) for tracing what is connected to the person
     "sample_margin": 120,  # colour-match only on pixels at least this far away
     "backdrop_min": 150,   # ...that are bright backdrop in both images (mean RGB)
     "threshold": 35,       # max per-channel change (0-255) that counts as "the AI changed this"
@@ -202,9 +230,12 @@ def adaptive_composite(
        Gain only, no offset: a fitted line (orig = a * gen + b) was skewed by
        dark areas the AI legitimately re-rendered, and its offset lifted
        every black by ~20 levels, laying a white haze over dark hair.
-    2. Changed region = pixels near the old person that differ noticeably
-       after colour-matching (the new person, wherever they ended up), plus
-       the old person's own area (which must be replaced either way).
+    2. Changed region = pixels that differ noticeably after colour-matching
+       AND are connected to the old person — the new person, however far
+       they extend (a broader shoulder reaching the frame edge, fuller
+       hair), while stray changes elsewhere are ignored. Plus the old
+       person's own area, which must be replaced either way. (A fixed
+       search radius here cut off a shoulder that reached further than it.)
     3. Clean up, feather, and composite. Everything else — backdrop, the
        phone where the AI left it alone — stays the exact original pixel.
        Protected graphics (panel, headline) always stay original.
@@ -234,8 +265,9 @@ def adaptive_composite(
     gen = np.clip(gen, 0, 255)
 
     diff = np.abs(gen - orig).max(axis=2)
-    changed = (diff > p["threshold"]) & _grow(old, p["search_radius"]) & ~protect
+    changed = (diff > p["threshold"]) & ~protect
     changed = _grow(_shrink(changed, p["speck"]), p["speck"])
+    changed = _connected(old, changed, p["link_block"])
 
     region = changed | old
     region = _shrink(_grow(region, p["close"]), p["close"])
