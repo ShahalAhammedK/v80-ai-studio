@@ -3,3 +3,6 @@
 # Only needed to regenerate precomputed campaign masks (scripts/make_masks.py).
 rembg>=2.0.63
 onnxruntime>=1.20
+
+# Used by scripts/make_protect_v80_lite.py (also pulled in by rembg).
+scipy>=1.11

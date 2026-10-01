@@ -15,7 +15,7 @@ from backend.config import GEMINI_API_KEY, IMAGE_PROVIDER, OPENAI_API_KEY
 from backend.errors import UserFacingError
 from backend.gender_detect import detect_gender
 from backend.image_utils import image_to_png_bytes, validate_upload
-from backend.precomputed_masks import count as precomputed_mask_count, lookup as lookup_precomputed_mask
+from backend.precomputed_masks import count as precomputed_mask_count, lookup as lookup_precomputed_mask, lookup_protect
 from backend.rate_limit import check_rate_limit
 from backend.segmentation import generate_person_mask, is_installed as segmentation_installed
 
@@ -124,10 +124,14 @@ async def replace_person_endpoint(
             "The mask doesn't cover a person yet. Please use Edit Mask to paint over the subject."
         )
 
-    # CPU-bound (especially the local provider, which can take minutes) — run off
-    # the event loop so the rest of the site stays responsive during generation.
+    # Graphics that overlap the person in this campaign (phone, text panel) —
+    # looked up server-side from the campaign bytes, never trusted from the client.
+    protect_image = await run_in_threadpool(lookup_protect, campaign_data, campaign_image.size)
+
+    # CPU-bound — run off the event loop so the rest of the site stays
+    # responsive during generation.
     result_image = await run_in_threadpool(
-        replace_person, campaign_image, person_image, mask_image, parsed_settings
+        replace_person, campaign_image, person_image, mask_image, parsed_settings, protect_image
     )
 
     result_png = image_to_png_bytes(result_image)

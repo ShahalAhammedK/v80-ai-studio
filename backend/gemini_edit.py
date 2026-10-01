@@ -31,6 +31,7 @@ def replace_person_gemini(
     person_image: Image.Image,
     mask_l: Image.Image,
     settings: dict,
+    protect_l: Image.Image | None = None,
 ) -> Image.Image:
     """
     Gemini's image models edit purely from a text prompt + reference images —
@@ -80,7 +81,7 @@ def replace_person_gemini(
         raise UserFacingError("The AI service didn't return an image. Please try again.", 502)
 
     generated = Image.open(io.BytesIO(generated_bytes)).convert("RGB")
-    return composite_result(campaign_image, generated, mask_l)
+    return composite_result(campaign_image, generated, mask_l, protect_l=protect_l)
 
 
 def _raise_friendly(exc: Exception):

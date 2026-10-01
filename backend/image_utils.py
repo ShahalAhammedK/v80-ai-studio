@@ -143,20 +143,37 @@ def build_openai_mask(person_mask_l: Image.Image) -> Image.Image:
     return rgba
 
 
+def remove_protected(mask_l: Image.Image, protect_l: Image.Image | None) -> Image.Image:
+    """Zero the mask wherever the protect mask is set (255 = always keep original)."""
+    if protect_l is None:
+        return mask_l
+    from PIL import ImageChops
+
+    protect = protect_l.convert("L")
+    if protect.size != mask_l.size:
+        protect = protect.resize(mask_l.size, Image.NEAREST)
+    return ImageChops.subtract(mask_l.convert("L"), protect)
+
+
 def composite_result(
     original: Image.Image,
     generated: Image.Image,
     mask_l: Image.Image,
     feather: int = 2,
+    protect_l: Image.Image | None = None,
 ) -> Image.Image:
     """
     Guarantee pixel-perfect preservation outside the mask by compositing the
     AI result back onto the untouched original everywhere the mask is 0.
+
+    Protected pixels are removed AFTER the feather blur, so the blur can't
+    bleed AI output back into them: a protected pixel is always the original.
     """
     from PIL import ImageFilter
 
     mask = mask_l.convert("L").resize(original.size, Image.LANCZOS)
     if feather > 0:
         mask = mask.filter(ImageFilter.GaussianBlur(feather))
+    mask = remove_protected(mask, protect_l)
     generated = generated.convert("RGB").resize(original.size, Image.LANCZOS)
     return Image.composite(generated, original.convert("RGB"), mask)

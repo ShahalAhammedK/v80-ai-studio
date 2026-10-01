@@ -480,4 +480,4 @@ el("shareModal").addEventListener("click", (e) => {
 refreshStatus();
 
 // One fixed campaign image, applied on load — the user only uploads a person.
-selectDefaultCampaign("man", "/static/assets/campaigns/man.png");
+selectDefaultCampaign("v80-lite", "/static/assets/campaigns/v80-lite.png");
