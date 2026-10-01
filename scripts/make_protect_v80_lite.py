@@ -1,17 +1,21 @@
 """
-Build the protect mask for the V80 Lite campaign (static/assets/campaigns/
-v80-lite.png).
-
-A protect mask marks pixels that must always come from the original campaign,
-whatever the AI returns and however far the person mask is grown. The V80
-Lite layout needs one because graphics overlap the person:
+Build the two graphics masks for the V80 Lite campaign (static/assets/
+campaigns/v80-lite.png). Graphics overlap the person in this layout:
 
   - the green battery panel ("32H 37M", Guinness badge) sits over the torso,
     and person segmentation swallows it whole;
-  - the phone is held out in front of the body, gripped by the hand;
-  - the "ALWAYS POWERED" slogan overlaps the top of the hair.
+  - the "ALWAYS POWERED" slogan overlaps the top of the hair;
+  - the phone is held out in front of the body, gripped by the hand.
 
-Without it, the AI would redraw the panel text, the phone and the slogan.
+v80-lite.protect.png — always the original pixel in the final image: the
+    panel, the slogan letters and the headline above them. These are layered
+    ON TOP of the person, so restoring them exactly is also the natural look.
+
+v80-lite.noedit.png — protect plus the phone; sent to the AI as "do not
+    edit". The phone is deliberately NOT in protect: the hand wraps around it,
+    and locking it in the final image cut the new person's fingertips off at
+    its edge. The final composite keeps the original phone wherever the AI
+    left it unchanged (see adaptive_composite in backend/image_utils.py).
 
 The regions are measured from this specific image, so this script is
 campaign-specific. If the campaign image changes, re-measure the coordinates
@@ -23,7 +27,7 @@ and rerun, then run scripts/make_masks.py.
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 from scipy.ndimage import binary_dilation
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -43,13 +47,19 @@ def main() -> None:
     h = rgb.shape[0]
     size = image.size
 
-    # Battery panel (x 110-886, y 1139-1544) plus its nub on the right
-    # (to x 927, y 1233-1456). Outset 3px with a small corner radius, so the
-    # corners are over-protected rather than under-protected.
-    panel = shape_mask(size, lambda d: (
-        d.rounded_rectangle([107, 1136, 889, 1547], radius=20, fill=255),
-        d.rounded_rectangle([884, 1230, 930, 1459], radius=8, fill=255),
-    ))
+    # Battery panel: a rounded rectangle, x 110-886, y 1139-1544, corner
+    # radius 46 (fitted to the rim to within ~1px on every corner), drawn
+    # exactly - no outset. An outset restores slivers of whatever was beside
+    # the panel in the ORIGINAL (old jacket, old backdrop), which show as
+    # notches once the new person is drawn differently there.
+    panel = shape_mask(size, lambda d: d.rounded_rectangle([110, 1139, 886, 1544], radius=46, fill=255))
+    # The battery nub on the right edge: traced row by row from its bright
+    # green rim, which is clean on that side.
+    rim = (g - r > 55) & (g > 90)
+    for y in range(1139, 1545):
+        right = np.where(rim[y, 700:])[0]
+        if len(right):
+            panel[y, 886:700 + right.max() + 1] = True
 
     # Phone: an outset quadrilateral around the tilted handset, minus skin, so
     # the fingers and thumb wrapped over its edges stay replaceable.
@@ -58,17 +68,28 @@ def main() -> None:
     phone = quad & ~skin
 
     # Slogan letters (saturated green) — protected letter by letter, so hair
-    # can still grow into the gaps between them — and everything above.
+    # can still grow into the gaps between them — and everything above. Only
+    # the letter pixels themselves: growing them pulls in the ORIGINAL hair
+    # that touched the letters, which shows as dark specks over a new hairline.
     band = np.zeros(rgb.shape[:2], bool)
     band[320:400] = True
-    letters = binary_dilation(band & (g > r + 30) & (g > b + 10), iterations=2)
+    letters = band & (g > r + 40) & (g > b + 15)
     above = np.zeros(rgb.shape[:2], bool)
     above[:330] = True
 
-    protect = panel | phone | letters | above
-    out = CAMPAIGN.with_suffix(".protect.png")
-    Image.fromarray((protect * 255).astype(np.uint8)).save(out, optimize=True)
-    print(f"ok  {out.name}: {protect.mean() * 100:.1f}% of the image protected ({h} rows)")
+    protect = panel | letters | above
+    noedit = protect | phone
+    # protect gets a sub-pixel soft edge: a hard on/off edge leaves a stair-
+    # stepped seam where the panel's anti-aliased rim meets the new person.
+    # noedit only guides the AI, so it stays hard.
+    outputs = (
+        (".protect.png", Image.fromarray((protect * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8))),
+        (".noedit.png", Image.fromarray((noedit * 255).astype(np.uint8))),
+    )
+    for suffix, image in outputs:
+        out = CAMPAIGN.with_suffix(suffix)
+        image.save(out, optimize=True)
+        print(f"ok  {out.name}: {(np.asarray(image) > 127).mean() * 100:.1f}% of the image ({h} rows)")
 
 
 if __name__ == "__main__":

@@ -8,8 +8,8 @@ from PIL import Image
 from .config import GEMINI_API_KEY, IMAGE_MODEL, IMAGE_PROVIDER, OPENAI_API_KEY, SUPPORTED_SIZES
 from .errors import UserFacingError
 from .image_utils import (
+    adaptive_composite,
     build_openai_mask,
-    composite_result,
     expand_mask,
     fit_to_size,
     image_to_png_bytes,
@@ -141,6 +141,11 @@ Keep the original subject's exact position and camera angle, and the hand's exac
 The final result should look like the original campaign photograph was genuinely photographed with the reference person — their own face and body build, in the campaign's outfit and pose, holding the same phone. Do not redesign the campaign, move or alter the phone, alter logos or text, or add people. ONLY replace the human subject — everything else in the scene stays as it was."""
 
 
+# Growth of the person mask sent to OpenAI (px at the 1024-wide working size).
+API_MASK_RADIUS = 24
+API_MASK_EXTRA_UP = 16
+
+
 def _provider_order() -> list[str]:
     """Preferred provider first, then any other configured providers as fallback."""
     order = [IMAGE_PROVIDER]
@@ -151,12 +156,12 @@ def _provider_order() -> list[str]:
     return order
 
 
-def _run_provider(provider: str, campaign_image, person_image, mask_l, settings, protect_l) -> Image.Image:
+def _run_provider(provider: str, campaign_image, person_image, mask_l, settings, protect_l, noedit_l) -> Image.Image:
     if provider == "gemini":
         from .gemini_edit import replace_person_gemini
 
         return replace_person_gemini(campaign_image, person_image, mask_l, settings, protect_l)
-    return _replace_person_openai(campaign_image, person_image, mask_l, settings, protect_l)
+    return _replace_person_openai(campaign_image, person_image, mask_l, settings, protect_l, noedit_l)
 
 
 def replace_person(
@@ -165,21 +170,23 @@ def replace_person(
     mask_l: Image.Image,
     settings: dict,
     protect_l: Image.Image | None = None,
+    noedit_l: Image.Image | None = None,
 ) -> Image.Image:
     """
     Dispatches to the configured image provider (see IMAGE_PROVIDER in config.py).
     If it fails (quota, auth, upstream error) and a second provider is configured,
     automatically retries with that one before giving up.
 
-    `protect_l` (255 = always keep the original pixel) covers campaign graphics
-    that overlap the person, which no amount of mask growth may touch.
+    Campaign graphics that overlap the person (see scripts/make_protect_*.py):
+    `protect_l` — 255 = always the original pixel in the final image;
+    `noedit_l`  — 255 = tell the AI not to edit (protect plus e.g. a held phone).
     """
     providers = _provider_order()
     primary_error: UserFacingError | None = None
 
     for i, provider in enumerate(providers):
         try:
-            result = _run_provider(provider, campaign_image, person_image, mask_l, settings, protect_l)
+            result = _run_provider(provider, campaign_image, person_image, mask_l, settings, protect_l, noedit_l)
             if i > 0:
                 logger.info("Image provider '%s' failed; '%s' succeeded instead.", providers[0], provider)
             return result
@@ -201,6 +208,7 @@ def _replace_person_openai(
     mask_l: Image.Image,
     settings: dict,
     protect_l: Image.Image | None = None,
+    noedit_l: Image.Image | None = None,
 ) -> Image.Image:
     client = _get_client()
 
@@ -212,31 +220,17 @@ def _replace_person_openai(
     fitted_campaign, offset, fitted_dims = fit_to_size(campaign_image, target_size)
     fitted_mask, _, _ = fit_to_size(mask_l.convert("L"), target_size)
 
-    # Two masks with different jobs, so they get grown by different amounts:
-    #
-    # 1. The mask sent to OpenAI defines where it may edit. Sideways growth stays
-    #    small so the model can't drift out of the original pose, but it gets a lot
-    #    of headroom upward — otherwise a replacement person with more hair than the
-    #    original has nowhere to put it and the model flattens their hairstyle.
-    # 2. The composite mask defines how much of OpenAI's output we keep. It is grown
-    #    further still, so nothing the model legitimately drew (hair, shoulders) gets
-    #    hard-reset back to the original background and sliced off. The product,
-    #    logo and text are far from the person, so they stay pixel-exact regardless.
-    # The model reliably draws the person as tall as the mask permits, so the mask's
-    # top edge effectively sets their height. Measured: 70px of headroom made them
-    # ~100px taller than the original, 22px made them 34px taller. Keeping it minimal
-    # pins their head to the original subject's head height, which is what keeps them
-    # correctly scaled against the (deliberately oversized) product. The composite
-    # mask stays looser so nothing actually drawn gets clipped.
-    api_mask = expand_mask(fitted_mask, radius=10, extra_up=6)
-    composite_mask_fitted = expand_mask(fitted_mask, radius=30, extra_up=40)
-
-    # Growth runs straight into graphics that overlap the person (the phone in
-    # their hand, the panel over the torso), so the protect mask is removed
-    # after growing, never before.
-    if protect_l is not None:
-        fitted_protect, _, _ = fit_to_size(protect_l.convert("L"), target_size)
-        api_mask = remove_protected(api_mask, fitted_protect)
+    # The mask sent to OpenAI says where it may edit. It is grown well past the
+    # old person, so a new person with a bigger head, fuller hair or a different
+    # grip has room to be drawn whole instead of squeezed into the old outline.
+    # (What we finally keep is decided afterwards by adaptive_composite, from
+    # what the model actually drew.) Growth runs into graphics that overlap the
+    # person, so the do-not-edit area is removed after growing, never before.
+    api_mask = expand_mask(fitted_mask, radius=API_MASK_RADIUS, extra_up=API_MASK_EXTRA_UP)
+    no_edit = noedit_l or protect_l
+    if no_edit is not None:
+        fitted_no_edit, _, _ = fit_to_size(no_edit.convert("L"), target_size)
+        api_mask = remove_protected(api_mask, fitted_no_edit)
 
     openai_mask = build_openai_mask(api_mask)
 
@@ -291,13 +285,6 @@ def _replace_person_openai(
     generated_fitted = Image.open(io.BytesIO(generated_bytes)).convert("RGB")
     generated_full = unfit_from_size(generated_fitted, offset, fitted_dims, original_size)
 
-    # These unified image-gen models subtly re-grade color/brightness across the
-    # WHOLE returned image during generation — even the "untouched" background and
-    # product drift slightly from the original. So we still composite back onto the
-    # pristine original outside the mask. Using the *dilated* mask (not the tight
-    # auto-detected one) is what avoids reintroducing the earlier hair-clipping ghost
-    # edge: the dilation gives a margin where OpenAI's own naturally-blended pixels
-    # are kept, and only genuinely untouched areas (background, product) get hard-
-    # reasserted to the original.
-    composite_mask = unfit_from_size(composite_mask_fitted, offset, fitted_dims, original_size)
-    return composite_result(campaign_image, generated_full, composite_mask, feather=3, protect_l=protect_l)
+    # Keep the new person wherever the model drew them; everything it left
+    # alone goes back to the exact original pixel. See adaptive_composite.
+    return adaptive_composite(campaign_image, generated_full, mask_l, protect_l)

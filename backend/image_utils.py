@@ -143,6 +143,108 @@ def build_openai_mask(person_mask_l: Image.Image) -> Image.Image:
     return rgba
 
 
+def _grow(mask, radius: int):
+    """Square dilation of a boolean array by `radius` px (separable, numpy only)."""
+    import numpy as np
+
+    out = mask.astype(np.uint8)
+    for axis in (0, 1):
+        src = out.copy()
+        n = src.shape[axis]
+        for d in range(1, min(radius, n - 1) + 1):
+            head = [slice(None)] * 2
+            tail = [slice(None)] * 2
+            head[axis] = slice(d, None)
+            tail[axis] = slice(None, -d)
+            np.maximum(out[tuple(head)], src[tuple(tail)], out=out[tuple(head)])
+            np.maximum(out[tuple(tail)], src[tuple(head)], out=out[tuple(tail)])
+    return out > 0
+
+
+def _shrink(mask, radius: int):
+    return ~_grow(~mask, radius)
+
+
+# Tuned against real generations of the V80 Lite campaign.
+ADAPTIVE = {
+    "search_radius": 90,   # how far from the old person the new one may extend
+    "sample_margin": 120,  # colour-match only on pixels at least this far away
+    "threshold": 35,       # max per-channel change (0-255) that counts as "the AI changed this"
+    "speck": 2,            # remove isolated changed specks smaller than this
+    "close": 10,           # bridge small gaps inside the new person
+    "pad": 6,              # grow before feathering, so the blur doesn't thin fingers or hair
+    "feather": 4,          # Gaussian blur on the final edge
+}
+
+
+def adaptive_composite(
+    original: Image.Image,
+    generated: Image.Image,
+    person_mask_l: Image.Image,
+    protect_l: Image.Image | None = None,
+) -> Image.Image:
+    """
+    Merge the AI's image into the original, keeping the AI's new person whole.
+
+    The earlier approach kept AI pixels only inside the OLD person's outline.
+    A new person rarely has the same outline — a larger head, a different
+    hairline, a hand that grips the phone slightly differently — so the
+    result was cut off along that outline: a cheek sliced in a straight line,
+    fingertips ending at the phone's edge.
+
+    Instead, find where the AI actually changed the picture and keep that:
+
+    1. Colour-match. These models re-grade colour across the whole frame, so
+       fit a per-channel line (orig = a * gen + b) on pixels far from the
+       person, where the AI should have changed nothing, and apply it to the
+       AI image. Its backdrop then matches the original, and edges blend.
+    2. Changed region = pixels near the old person that differ noticeably
+       after colour-matching (the new person, wherever they ended up), plus
+       the old person's own area (which must be replaced either way).
+    3. Clean up, feather, and composite. Everything else — backdrop, the
+       phone where the AI left it alone — stays the exact original pixel.
+       Protected graphics (panel, headline) always stay original.
+    """
+    import numpy as np
+    from PIL import ImageFilter
+
+    size = original.size
+    orig = np.asarray(original.convert("RGB"), dtype=np.float32)
+    gen = np.asarray(generated.convert("RGB").resize(size, Image.LANCZOS), dtype=np.float32)
+    old = np.asarray(person_mask_l.convert("L").resize(size, Image.LANCZOS)) > 127
+    # Protect is soft-edged (0-255): fully protected pixels are exact
+    # originals, and its 1px rim blends so graphics edges stay anti-aliased.
+    protect_f = (
+        np.asarray(protect_l.convert("L").resize(size, Image.NEAREST), dtype=np.float32) / 255.0
+        if protect_l is not None
+        else np.zeros(old.shape, np.float32)
+    )
+    protect = protect_f > 0.5
+    p = ADAPTIVE
+
+    sample = ~_grow(old, p["sample_margin"]) & ~protect
+    sample[1::2, :] = False  # every other row is plenty for a 2-parameter fit
+    if sample.sum() > 1000:
+        for c in range(3):
+            a, b = np.polyfit(gen[..., c][sample], orig[..., c][sample], 1)
+            gen[..., c] = gen[..., c] * a + b
+    gen = np.clip(gen, 0, 255)
+
+    diff = np.abs(gen - orig).max(axis=2)
+    changed = (diff > p["threshold"]) & _grow(old, p["search_radius"]) & ~protect
+    changed = _grow(_shrink(changed, p["speck"]), p["speck"])
+
+    region = changed | old
+    region = _shrink(_grow(region, p["close"]), p["close"])
+    region = _grow(region, p["pad"])
+
+    alpha = Image.fromarray((region * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(p["feather"]))
+    alpha = np.asarray(alpha, dtype=np.float32) / 255.0 * (1.0 - protect_f)
+
+    out = gen * alpha[..., None] + orig * (1.0 - alpha[..., None])
+    return Image.fromarray(np.clip(np.rint(out), 0, 255).astype(np.uint8))
+
+
 def remove_protected(mask_l: Image.Image, protect_l: Image.Image | None) -> Image.Image:
     """Zero the mask wherever the protect mask is set (255 = always keep original)."""
     if protect_l is None:
@@ -154,26 +256,3 @@ def remove_protected(mask_l: Image.Image, protect_l: Image.Image | None) -> Imag
         protect = protect.resize(mask_l.size, Image.NEAREST)
     return ImageChops.subtract(mask_l.convert("L"), protect)
 
-
-def composite_result(
-    original: Image.Image,
-    generated: Image.Image,
-    mask_l: Image.Image,
-    feather: int = 2,
-    protect_l: Image.Image | None = None,
-) -> Image.Image:
-    """
-    Guarantee pixel-perfect preservation outside the mask by compositing the
-    AI result back onto the untouched original everywhere the mask is 0.
-
-    Protected pixels are removed AFTER the feather blur, so the blur can't
-    bleed AI output back into them: a protected pixel is always the original.
-    """
-    from PIL import ImageFilter
-
-    mask = mask_l.convert("L").resize(original.size, Image.LANCZOS)
-    if feather > 0:
-        mask = mask.filter(ImageFilter.GaussianBlur(feather))
-    mask = remove_protected(mask, protect_l)
-    generated = generated.convert("RGB").resize(original.size, Image.LANCZOS)
-    return Image.composite(generated, original.convert("RGB"), mask)

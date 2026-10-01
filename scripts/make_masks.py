@@ -4,9 +4,10 @@ Regenerate the precomputed person masks for the built-in campaign images.
 Run this after adding or replacing anything in static/assets/campaigns/, then
 commit the resulting "<name>.mask.png" files alongside their campaign image.
 
-If a campaign has a "<name>.protect.png" (graphics that overlap the person —
-see scripts/make_protect_v80_lite.py), build that first: protected pixels are
-removed from the person mask here.
+If a campaign has graphics masks (scripts/make_protect_v80_lite.py), build
+those first: the do-not-edit area (or, failing that, the protect area) is
+removed from the person mask here, so e.g. a hand-held phone isn't counted as
+part of the person.
 
     pip install -r requirements-dev.txt
     python scripts/make_masks.py
@@ -21,7 +22,7 @@ sys.path.insert(0, str(ROOT))
 from PIL import Image, ImageChops  # noqa: E402
 
 from backend.image_utils import validate_upload  # noqa: E402
-from backend.precomputed_masks import CAMPAIGN_DIR, is_campaign_image, protect_path_for  # noqa: E402
+from backend.precomputed_masks import CAMPAIGN_DIR, is_campaign_image, noedit_path_for, protect_path_for  # noqa: E402
 from backend.segmentation import generate_person_mask  # noqa: E402
 
 
@@ -43,7 +44,9 @@ def main() -> int:
 
         mask = mask.convert("L")
         note = ""
-        protect_path = protect_path_for(image_path)
+        protect_path = noedit_path_for(image_path)
+        if not protect_path.exists():
+            protect_path = protect_path_for(image_path)
         if protect_path.exists():
             protect = Image.open(protect_path).convert("L").resize(mask.size)
             mask = ImageChops.subtract(mask, protect)

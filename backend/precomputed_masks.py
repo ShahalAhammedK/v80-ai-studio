@@ -13,10 +13,12 @@ So the masks are generated once, committed next to their campaign image as
 bytes. The frontend fetches those exact files to build its upload, so the
 bytes (and therefore the hash) match exactly.
 
-A campaign may also ship a "<name>.protect.png": graphics that overlap the
-person (a phone held in front of the body, a text panel over the torso) and
-must always come from the original, no matter how far the person mask is
-grown. See scripts/make_protect_v80_lite.py.
+A campaign may also ship graphics masks for things that overlap the person
+(see scripts/make_protect_v80_lite.py):
+  "<name>.protect.png" — always the original pixel in the final image;
+  "<name>.noedit.png"  — sent to the AI as "do not edit" (protect plus things
+                         like a hand-held phone that the person wraps around).
+
 
 Hashes are computed from disk at import time rather than hardcoded, so
 replacing a campaign image can't silently leave a stale mask behind — swap the
@@ -36,9 +38,9 @@ logger = logging.getLogger("v80.precomputed_masks")
 
 CAMPAIGN_DIR = Path(__file__).resolve().parent.parent / "static" / "assets" / "campaigns"
 
-_DERIVED_SUFFIXES = (".mask.png", ".protect.png")
+_DERIVED_SUFFIXES = (".mask.png", ".protect.png", ".noedit.png")
 
-# sha256(campaign bytes) -> {"mask": Path, "protect": Path | None}
+# sha256(campaign bytes) -> {"mask": Path, "protect": Path | None, "noedit": Path | None}
 _index: dict[str, dict[str, Path | None]] | None = None
 
 
@@ -49,6 +51,14 @@ def is_campaign_image(path: Path) -> bool:
 
 def protect_path_for(image_path: Path) -> Path:
     return image_path.with_suffix(".protect.png")
+
+
+def noedit_path_for(image_path: Path) -> Path:
+    return image_path.with_suffix(".noedit.png")
+
+
+def _existing(path: Path) -> Path | None:
+    return path if path.exists() else None
 
 
 def _build_index() -> dict[str, dict[str, Path | None]]:
@@ -64,9 +74,12 @@ def _build_index() -> dict[str, dict[str, Path | None]]:
         if not mask_path.exists():
             logger.warning("No precomputed mask for %s", image_path.name)
             continue
-        protect_path = protect_path_for(image_path)
         digest = hashlib.sha256(image_path.read_bytes()).hexdigest()
-        index[digest] = {"mask": mask_path, "protect": protect_path if protect_path.exists() else None}
+        index[digest] = {
+            "mask": mask_path,
+            "protect": _existing(protect_path_for(image_path)),
+            "noedit": _existing(noedit_path_for(image_path)),
+        }
 
     logger.info("Loaded %d precomputed campaign mask(s)", len(index))
     return index
@@ -92,7 +105,7 @@ def _load(campaign_bytes: bytes, kind: str, size: tuple[int, int]) -> Image.Imag
         return None
 
     if image.size != size:
-        image = image.resize(size, Image.NEAREST if kind == "protect" else Image.LANCZOS)
+        image = image.resize(size, Image.LANCZOS if kind == "mask" else Image.NEAREST)
     return image
 
 
@@ -104,6 +117,11 @@ def lookup(campaign_bytes: bytes, size: tuple[int, int]) -> Image.Image | None:
 def lookup_protect(campaign_bytes: bytes, size: tuple[int, int]) -> Image.Image | None:
     """Return the protect mask (255 = always keep original) for this campaign, or None."""
     return _load(campaign_bytes, "protect", size)
+
+
+def lookup_noedit(campaign_bytes: bytes, size: tuple[int, int]) -> Image.Image | None:
+    """Return the do-not-edit mask sent to the AI (falls back to protect), or None."""
+    return _load(campaign_bytes, "noedit", size) or lookup_protect(campaign_bytes, size)
 
 
 def count() -> int:
