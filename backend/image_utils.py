@@ -169,6 +169,7 @@ def _shrink(mask, radius: int):
 ADAPTIVE = {
     "search_radius": 90,   # how far from the old person the new one may extend
     "sample_margin": 120,  # colour-match only on pixels at least this far away
+    "backdrop_min": 150,   # ...that are bright backdrop in both images (mean RGB)
     "threshold": 35,       # max per-channel change (0-255) that counts as "the AI changed this"
     "speck": 2,            # remove isolated changed specks smaller than this
     "close": 10,           # bridge small gaps inside the new person
@@ -195,9 +196,12 @@ def adaptive_composite(
     Instead, find where the AI actually changed the picture and keep that:
 
     1. Colour-match. These models re-grade colour across the whole frame, so
-       fit a per-channel line (orig = a * gen + b) on pixels far from the
-       person, where the AI should have changed nothing, and apply it to the
+       measure a per-channel brightness gain on the backdrop far from the
+       person (where the AI should have changed nothing) and apply it to the
        AI image. Its backdrop then matches the original, and edges blend.
+       Gain only, no offset: a fitted line (orig = a * gen + b) was skewed by
+       dark areas the AI legitimately re-rendered, and its offset lifted
+       every black by ~20 levels, laying a white haze over dark hair.
     2. Changed region = pixels near the old person that differ noticeably
        after colour-matching (the new person, wherever they ended up), plus
        the old person's own area (which must be replaced either way).
@@ -223,11 +227,10 @@ def adaptive_composite(
     p = ADAPTIVE
 
     sample = ~_grow(old, p["sample_margin"]) & ~protect
-    sample[1::2, :] = False  # every other row is plenty for a 2-parameter fit
-    if sample.sum() > 1000:
-        for c in range(3):
-            a, b = np.polyfit(gen[..., c][sample], orig[..., c][sample], 1)
-            gen[..., c] = gen[..., c] * a + b
+    sample[1::2, :] = False  # every other row is plenty for three gains
+    backdrop = sample & (orig.mean(axis=2) > p["backdrop_min"]) & (gen.mean(axis=2) > p["backdrop_min"])
+    if backdrop.sum() > 1000:
+        gen *= orig[backdrop].sum(axis=0) / gen[backdrop].sum(axis=0)
     gen = np.clip(gen, 0, 255)
 
     diff = np.abs(gen - orig).max(axis=2)
