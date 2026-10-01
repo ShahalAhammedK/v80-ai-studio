@@ -17,9 +17,16 @@ v80-lite.noedit.png — protect plus the phone; sent to the AI as "do not
     its edge. The final composite keeps the original phone wherever the AI
     left it unchanged (see adaptive_composite in backend/image_utils.py).
 
+v80-lite.hand.png — the original man's hand gripping the phone (fingers and
+    thumb). For a woman it is erased from the picture sent to the AI: an
+    image-edit model traces what is already there, so with the man's hand in
+    place every woman came out holding the phone with his large, broad hand,
+    whatever the prompt said. With it erased she gets her own slender hand.
+
 The regions are measured from this specific image, so this script is
 campaign-specific. If the campaign image changes, re-measure the coordinates
-and rerun, then run scripts/make_masks.py.
+and rerun, then run scripts/make_masks.py (the hand mask reads the person
+mask, so if that changes, rerun this script afterwards).
 
     python scripts/make_protect_v80_lite.py
 """
@@ -79,12 +86,22 @@ def main() -> None:
 
     protect = panel | letters | above
     noedit = protect | phone
+
+    # The hand: skin within the person, in two boxes (the fingers curled over
+    # the phone's left edge, the thumb on its right edge), grown a little to
+    # take the skin's soft edge too. Never the phone itself.
+    person = np.array(Image.open(CAMPAIGN.with_suffix(".mask.png")).convert("L")) > 127
+    boxes = shape_mask(size, lambda d: (d.rectangle([60, 700, 300, 1115], fill=255),
+                                        d.rectangle([455, 790, 580, 1010], fill=255)))
+    raw_skin = (r > g + 12) & (r > b + 5) & (r > 60)
+    hand = binary_dilation(raw_skin & person & boxes, iterations=8) & boxes & ~noedit
     # protect gets a sub-pixel soft edge: a hard on/off edge leaves a stair-
     # stepped seam where the panel's anti-aliased rim meets the new person.
     # noedit only guides the AI, so it stays hard.
     outputs = (
         (".protect.png", Image.fromarray((protect * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8))),
         (".noedit.png", Image.fromarray((noedit * 255).astype(np.uint8))),
+        (".hand.png", Image.fromarray((hand * 255).astype(np.uint8))),
     )
     for suffix, image in outputs:
         out = CAMPAIGN.with_suffix(suffix)

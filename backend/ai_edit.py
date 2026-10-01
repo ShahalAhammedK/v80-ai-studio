@@ -10,6 +10,7 @@ from .errors import UserFacingError
 from .image_utils import (
     adaptive_composite,
     build_openai_mask,
+    erase_for_ai,
     expand_mask,
     fit_to_size,
     image_to_png_bytes,
@@ -160,12 +161,14 @@ def _provider_order() -> list[str]:
     return order
 
 
-def _run_provider(provider: str, campaign_image, person_image, mask_l, settings, protect_l, noedit_l) -> Image.Image:
+def _run_provider(
+    provider: str, campaign_image, person_image, mask_l, settings, protect_l, noedit_l, hand_l
+) -> Image.Image:
     if provider == "gemini":
         from .gemini_edit import replace_person_gemini
 
         return replace_person_gemini(campaign_image, person_image, mask_l, settings, protect_l)
-    return _replace_person_openai(campaign_image, person_image, mask_l, settings, protect_l, noedit_l)
+    return _replace_person_openai(campaign_image, person_image, mask_l, settings, protect_l, noedit_l, hand_l)
 
 
 def replace_person(
@@ -175,6 +178,7 @@ def replace_person(
     settings: dict,
     protect_l: Image.Image | None = None,
     noedit_l: Image.Image | None = None,
+    hand_l: Image.Image | None = None,
 ) -> Image.Image:
     """
     Dispatches to the configured image provider (see IMAGE_PROVIDER in config.py).
@@ -184,13 +188,16 @@ def replace_person(
     Campaign graphics that overlap the person (see scripts/make_protect_*.py):
     `protect_l` — 255 = always the original pixel in the final image;
     `noedit_l`  — 255 = tell the AI not to edit (protect plus e.g. a held phone).
+    `hand_l`    — the original subject's hand; erased for a woman (see erase_for_ai).
     """
     providers = _provider_order()
     primary_error: UserFacingError | None = None
 
     for i, provider in enumerate(providers):
         try:
-            result = _run_provider(provider, campaign_image, person_image, mask_l, settings, protect_l, noedit_l)
+            result = _run_provider(
+                provider, campaign_image, person_image, mask_l, settings, protect_l, noedit_l, hand_l
+            )
             if i > 0:
                 logger.info("Image provider '%s' failed; '%s' succeeded instead.", providers[0], provider)
             return result
@@ -213,6 +220,7 @@ def _replace_person_openai(
     settings: dict,
     protect_l: Image.Image | None = None,
     noedit_l: Image.Image | None = None,
+    hand_l: Image.Image | None = None,
 ) -> Image.Image:
     client = _get_client()
 
@@ -221,7 +229,14 @@ def _replace_person_openai(
     if target_size not in SUPPORTED_SIZES:
         target_size = "1024x1024"
 
-    fitted_campaign, offset, fitted_dims = fit_to_size(campaign_image, target_size)
+    # The campaign subject is a man. For a woman, erase his hand from the
+    # picture the AI edits, or it copies his large hand instead of drawing hers.
+    # Only the AI's copy: the final composite still uses the true original.
+    ai_campaign = campaign_image
+    if hand_l is not None and (settings.get("personGender") or "").lower() == "female":
+        ai_campaign = erase_for_ai(campaign_image, hand_l, mask_l)
+
+    fitted_campaign, offset, fitted_dims = fit_to_size(ai_campaign, target_size)
     fitted_mask, _, _ = fit_to_size(mask_l.convert("L"), target_size)
 
     # The mask sent to OpenAI says where it may edit. It is grown well past the

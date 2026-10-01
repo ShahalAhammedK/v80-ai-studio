@@ -17,7 +17,10 @@ A campaign may also ship graphics masks for things that overlap the person
 (see scripts/make_protect_v80_lite.py):
   "<name>.protect.png" — always the original pixel in the final image;
   "<name>.noedit.png"  — sent to the AI as "do not edit" (protect plus things
-                         like a hand-held phone that the person wraps around).
+                         like a hand-held phone that the person wraps around);
+  "<name>.hand.png"    — the original subject's hand, erased from the picture
+                         sent to the AI when the new person's own hand should
+                         look different (see erase_for_ai in image_utils.py).
 
 
 Hashes are computed from disk at import time rather than hardcoded, so
@@ -38,9 +41,9 @@ logger = logging.getLogger("v80.precomputed_masks")
 
 CAMPAIGN_DIR = Path(__file__).resolve().parent.parent / "static" / "assets" / "campaigns"
 
-_DERIVED_SUFFIXES = (".mask.png", ".protect.png", ".noedit.png")
+_DERIVED_SUFFIXES = (".mask.png", ".protect.png", ".noedit.png", ".hand.png")
 
-# sha256(campaign bytes) -> {"mask": Path, "protect": Path | None, "noedit": Path | None}
+# sha256(campaign bytes) -> {"mask": Path, "protect"/"noedit"/"hand": Path | None}
 _index: dict[str, dict[str, Path | None]] | None = None
 
 
@@ -79,6 +82,7 @@ def _build_index() -> dict[str, dict[str, Path | None]]:
             "mask": mask_path,
             "protect": _existing(protect_path_for(image_path)),
             "noedit": _existing(noedit_path_for(image_path)),
+            "hand": _existing(image_path.with_suffix(".hand.png")),
         }
 
     logger.info("Loaded %d precomputed campaign mask(s)", len(index))
@@ -122,6 +126,11 @@ def lookup_protect(campaign_bytes: bytes, size: tuple[int, int]) -> Image.Image 
 def lookup_noedit(campaign_bytes: bytes, size: tuple[int, int]) -> Image.Image | None:
     """Return the do-not-edit mask sent to the AI (falls back to protect), or None."""
     return _load(campaign_bytes, "noedit", size) or lookup_protect(campaign_bytes, size)
+
+
+def lookup_hand(campaign_bytes: bytes, size: tuple[int, int]) -> Image.Image | None:
+    """Return the original subject's hand mask for this campaign, or None."""
+    return _load(campaign_bytes, "hand", size)
 
 
 def count() -> int:

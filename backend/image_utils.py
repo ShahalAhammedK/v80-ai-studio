@@ -280,6 +280,32 @@ def adaptive_composite(
     return Image.fromarray(np.clip(np.rint(out), 0, 255).astype(np.uint8))
 
 
+def erase_for_ai(image: Image.Image, region_l: Image.Image, person_mask_l: Image.Image) -> Image.Image:
+    """
+    Paint `region_l` (255 = erase) over with the plain backdrop colour, for
+    the copy of the campaign sent to the AI only.
+
+    An image-edit model traces whatever is already in the picture: told to
+    give a woman a slender hand, it still drew the original man's large hand,
+    because that hand was right there to copy. With it erased, the model draws
+    the new person's own hand into the empty space. The colour is the median
+    of the bright backdrop away from the person, so the hole reads as plain
+    studio backdrop rather than a shape to fill in.
+    """
+    import numpy as np
+
+    rgb = np.asarray(image.convert("RGB")).copy()
+    region = np.asarray(region_l.convert("L").resize(image.size, Image.NEAREST)) > 127
+    person = np.asarray(person_mask_l.convert("L").resize(image.size, Image.NEAREST)) > 127
+    backdrop = ~_grow(person, ADAPTIVE["sample_margin"]) & (rgb.mean(axis=2) > 200)
+    if backdrop.sum() > 1000:
+        fill = np.median(rgb[backdrop], axis=0)
+    else:
+        fill = np.array([235, 235, 235])
+    rgb[region] = fill.astype(np.uint8)
+    return Image.fromarray(rgb)
+
+
 def remove_protected(mask_l: Image.Image, protect_l: Image.Image | None) -> Image.Image:
     """Zero the mask wherever the protect mask is set (255 = always keep original)."""
     if protect_l is None:
