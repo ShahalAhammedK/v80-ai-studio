@@ -69,7 +69,7 @@ export async function nativeShare(pngDataUrl, text) {
   const file = await blobToFile(blob);
   if (!canShareFiles(file)) return false;
   try {
-    await navigator.share({ files: [file], text, title: "V80 AI Studio" });
+    await navigator.share({ files: [file], text, title: "V80 Lite AI Studio" });
     return true;
   } catch (err) {
     if (err && err.name === "AbortError") return true; // user cancelled, not an error
@@ -92,7 +92,7 @@ export async function copyImage(pngDataUrl) {
 }
 
 export async function shareToPlatform(platform, pngDataUrl) {
-  const text = "Created with V80 AI Studio ✨";
+  const text = "Created with V80 Lite AI Studio ✨";
 
   if (platform === "x") {
     const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;

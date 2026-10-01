@@ -420,7 +420,7 @@ el("fullscreenBtn").addEventListener("click", () => {
   const win = window.open("", "_blank");
   if (!win) return showToast("Please allow pop-ups to view fullscreen.", "info");
   win.document.write(
-    `<title>V80 AI Studio Result</title><body style="margin:0;background:#0b1533;display:flex;align-items:center;justify-content:center;min-height:100vh;"><img src="${gen.dataUrl}" style="max-width:100%;max-height:100vh;"/></body>`
+    `<title>V80 Lite AI Studio Result</title><body style="margin:0;background:#0b1533;display:flex;align-items:center;justify-content:center;min-height:100vh;"><img src="${gen.dataUrl}" style="max-width:100%;max-height:100vh;"/></body>`
   );
 });
 
