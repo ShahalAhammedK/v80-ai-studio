@@ -35,16 +35,33 @@
   </section>
 
   <!--
-    The campaign image is fixed: there is one V80 master shot and it is applied
-    automatically on load (see selectDefaultCampaign in app.js). This block is
-    kept in the DOM, hidden, because the app still reads the campaign source
-    and preview nodes below — it is not a user-facing step any more.
+    Two fixed campaign images, one per format: "Social Media" is applied on
+    load, "Profile" on click (see selectDefaultCampaign in app.js). The hidden
+    block below is kept in the DOM because the app still reads the campaign
+    source and preview nodes in it — it is not a user-facing step.
   -->
+  <section class="section container">
+    <div class="section-bg">
+      <div class="section-head"><span class="section-title">Choose Format</span></div>
+      <p class="section-desc">Pick where you'll use your image.</p>
+      <div class="format-grid" role="radiogroup" aria-label="Image format">
+        <button type="button" class="default-campaign-card format-card" role="radio" aria-checked="true"
+                data-gender="v80-lite" data-src="/static/assets/campaigns/v80-lite.png">
+          <span class="format-thumb"><img src="/static/assets/campaigns/v80-lite.png" alt="" /></span>
+          <span class="format-name">Social Media</span>
+          <span class="format-sub">Portrait poster for posts and stories</span>
+        </button>
+        <button type="button" class="default-campaign-card format-card" role="radio" aria-checked="false"
+                data-gender="v80-lite-profile" data-src="/static/assets/campaigns/v80-lite-profile.png">
+          <span class="format-thumb"><img src="/static/assets/campaigns/v80-lite-profile.png" alt="" /></span>
+          <span class="format-name">Profile</span>
+          <span class="format-sub">Square picture for your profile</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
   <div class="hidden" hidden aria-hidden="true">
-    <button type="button" class="default-campaign-card" id="dcMan" data-gender="v80-lite" data-src="/static/assets/campaigns/v80-lite.png">
-      <img src="/static/assets/campaigns/v80-lite.png" alt="" />
-      <span class="dc-name">Man</span>
-    </button>
     <p id="defaultCampaignsHint"></p>
     <div id="campaignPreview" class="hidden">
       <img id="campaignPreviewImg" alt="" />

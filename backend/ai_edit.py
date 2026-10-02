@@ -84,12 +84,49 @@ def build_gender_line(person_gender: str | None) -> str:
     return line
 
 
+# Where each campaign image differs, keyed by layout. Which layout applies is
+# decided server-side from the campaign file (see layout_for in
+# precomputed_masks.py), never taken from the browser.
+LAYOUTS = {
+    # v80-lite.png — "Social Media", portrait.
+    "social": {
+        "hair": 'the top of the hair sits a little below the "ALWAYS POWERED" slogan',
+        "graphics": (
+            'CRITICAL — GRAPHICS IN FRONT: The "ALWAYS POWERED" slogan, the green battery panel ("32H 37M", '
+            '"CONTINUOUS LIVESTREAM ENDURANCE", the Guinness World Records "RECORD HOLDER" badge) and the phone are '
+            "layers IN FRONT of the person. They stay exactly as they are, on top; the person continues naturally "
+            "behind them."
+        ),
+    },
+    # v80-lite-profile.png — "Profile", square. The top of the hair overlaps
+    # the bottom of the big headline digits from in front; two lightning
+    # bolts float beside.
+    "profile": {
+        "hair": (
+            'the head sits to the right of the "ALWAYS POWERED" slogan, IN FRONT of the large "10000" headline, '
+            "with the top of the hair overlapping only a small part of the bottom edge of its digits, as in the "
+            "original — keep the head slightly smaller than the original so that most of each digit stays "
+            "visible, and never let the hair rise up over the middle of the digits"
+        ),
+        "graphics": (
+            'CRITICAL — GRAPHICS: The "ALWAYS POWERED" slogan, the two green lightning bolts, the green battery '
+            'panel ("32H 37M", "CONTINUOUS LIVESTREAM ENDURANCE", the Guinness World Records "RECORD HOLDER" badge) '
+            "and the phone stay exactly as they are; the panel and the phone are layers IN FRONT of the person, who "
+            'continues naturally behind them. The large "10000 mAh" headline is BEHIND the person: the top of the '
+            "hair may cover a small part of the bottom of its digits; everywhere else the digits stay complete, "
+            "unbroken and unchanged, in their original green."
+        ),
+    },
+}
+
+
 def build_prompt(
     identity_preservation: str,
     scene_preservation: str,
     keep_pose: bool,
     match_lighting: bool,
     person_gender: str | None = None,
+    layout: str = "social",
 ) -> str:
     identity_line = IDENTITY_INSTRUCTIONS.get(identity_preservation, IDENTITY_INSTRUCTIONS["high"])
     scene_line = SCENE_INSTRUCTIONS.get(scene_preservation, SCENE_INSTRUCTIONS["maximum"])
@@ -107,11 +144,12 @@ def build_prompt(
     )
 
     gender_line = build_gender_line(person_gender)
+    place = LAYOUTS.get(layout, LAYOUTS["social"])
 
-    # Written for the V80 Lite campaign (static/assets/campaigns/v80-lite.png):
-    # a chest-up shot holding the phone out toward the camera, with the slogan
-    # and battery panel layered over the person. The POSE, FRAMING and GRAPHICS
-    # blocks describe that specific image — revisit them if the campaign changes.
+    # Written for the V80 Lite campaigns (static/assets/campaigns/): a chest-up
+    # shot holding the phone out toward the camera, with graphics layered over
+    # the person. The POSE block describes both images; what differs between
+    # them is in LAYOUTS — revisit both if a campaign changes.
     # Keep in step with lib/prompt.js in the Cloudflare version.
     return f"""Replace ONLY the human subject in the first image (the campaign image) with the person shown in the second image (the reference image).
 
@@ -121,7 +159,7 @@ CRITICAL — POSE AND THE PHONE: The original subject is shown from the chest up
 
 The reference image defines the replacement person's identity: face, facial structure, skin tone, hair, and general body type (e.g. build/frame). Keep their exact hairstyle — the same cut, length, texture, curl pattern, hairline and volume as in the reference photo; the hair is part of who they are, not something to restyle. {identity_line}
 
-CRITICAL — FRAMING AND PROPORTION: Keep the original framing. The head must be in the same position as the original subject's head but slightly SMALLER — about 10% smaller than the original subject's head — so it looks natural and in proportion with the shoulders and the extended arm, never oversized or top-heavy; the top of the hair sits a little below the "ALWAYS POWERED" slogan; the shoulders at the same height and width; the torso filling the same area behind the battery panel. Do not zoom in or out and do not shift the person sideways. Take ONLY the person's likeness from the reference photo, never its framing — a close-up reference must not produce a larger head, and a full-body reference must not produce a smaller one. The head must be correctly proportioned to the shoulders and the extended arm; when in doubt, make the head smaller rather than larger.
+CRITICAL — FRAMING AND PROPORTION: Keep the original framing. The head must be in the same position as the original subject's head but slightly SMALLER — about 10% smaller than the original subject's head — so it looks natural and in proportion with the shoulders and the extended arm, never oversized or top-heavy; {place["hair"]}; the shoulders at the same height and width; the torso filling the same area behind the battery panel. Do not zoom in or out and do not shift the person sideways. Take ONLY the person's likeness from the reference photo, never its framing — a close-up reference must not produce a larger head, and a full-body reference must not produce a smaller one. The head must be correctly proportioned to the shoulders and the extended arm; when in doubt, make the head smaller rather than larger.
 
 CRITICAL — EXPRESSION: Whatever expression the reference photo shows, the replacement person must have a warm, happy, natural smile — a friendly, confident smile with the eyes smiling too, lips gently curved upward, with or without slightly showing teeth. Never a neutral, serious, blank or frowning face. It must still be clearly the same person: change only the expression, never their facial features, face shape, skin tone or hair.
 
@@ -129,7 +167,7 @@ CRITICAL — COMPLETENESS: Render a complete, natural head with a full hairstyle
 
 CRITICAL — THE HAND: The hand and forearm holding the phone must belong to the replacement person, not the original subject. Keep only the grip (a thumb and four fingers in the same position as the original); redraw the hand itself to match the replacement person's gender, age and build, with skin tone matching their face. For a woman: a slender, smaller, feminine hand with slim fingers and a narrow wrist — never the original man's large, broad hand. The hand must be in proportion with the person's own face and arm: only slightly larger than natural because it is nearer the camera, never oversized, never wider than the face. The hand must be anatomically natural, with natural fingernails and knuckles.
 
-CRITICAL — GRAPHICS IN FRONT: The "ALWAYS POWERED" slogan, the green battery panel ("32H 37M", "CONTINUOUS LIVESTREAM ENDURANCE", the Guinness World Records "RECORD HOLDER" badge) and the phone are layers IN FRONT of the person. They stay exactly as they are, on top; the person continues naturally behind them.
+{place["graphics"]}
 
 Do NOT copy the reference photo's clothing, outfit, accessories, background, or setting — ignore what the reference person is wearing and ignore where the reference photo was taken entirely. Clothing comes from the instruction below, not from the reference photo.
 
@@ -161,14 +199,15 @@ def _provider_order() -> list[str]:
     return order
 
 
-def _run_provider(
-    provider: str, campaign_image, person_image, mask_l, settings, protect_l, noedit_l, hand_l
-) -> Image.Image:
+def _run_provider(provider: str, campaign_image, person_image, mask_l, settings, extras: dict) -> Image.Image:
     if provider == "gemini":
         from .gemini_edit import replace_person_gemini
 
-        return replace_person_gemini(campaign_image, person_image, mask_l, settings, protect_l)
-    return _replace_person_openai(campaign_image, person_image, mask_l, settings, protect_l, noedit_l, hand_l)
+        return replace_person_gemini(
+            campaign_image, person_image, mask_l, settings, extras.get("protect_l"),
+            extras.get("plate"), extras.get("behind_l"),
+        )
+    return _replace_person_openai(campaign_image, person_image, mask_l, settings, **extras)
 
 
 def replace_person(
@@ -179,6 +218,8 @@ def replace_person(
     protect_l: Image.Image | None = None,
     noedit_l: Image.Image | None = None,
     hand_l: Image.Image | None = None,
+    plate: Image.Image | None = None,
+    behind_l: Image.Image | None = None,
 ) -> Image.Image:
     """
     Dispatches to the configured image provider (see IMAGE_PROVIDER in config.py).
@@ -189,15 +230,15 @@ def replace_person(
     `protect_l` — 255 = always the original pixel in the final image;
     `noedit_l`  — 255 = tell the AI not to edit (protect plus e.g. a held phone).
     `hand_l`    — the original subject's hand; erased for a woman (see erase_for_ai).
+    `plate`, `behind_l` — graphics the person stands in front of (see adaptive_composite).
     """
+    extras = {"protect_l": protect_l, "noedit_l": noedit_l, "hand_l": hand_l, "plate": plate, "behind_l": behind_l}
     providers = _provider_order()
     primary_error: UserFacingError | None = None
 
     for i, provider in enumerate(providers):
         try:
-            result = _run_provider(
-                provider, campaign_image, person_image, mask_l, settings, protect_l, noedit_l, hand_l
-            )
+            result = _run_provider(provider, campaign_image, person_image, mask_l, settings, extras)
             if i > 0:
                 logger.info("Image provider '%s' failed; '%s' succeeded instead.", providers[0], provider)
             return result
@@ -221,6 +262,8 @@ def _replace_person_openai(
     protect_l: Image.Image | None = None,
     noedit_l: Image.Image | None = None,
     hand_l: Image.Image | None = None,
+    plate: Image.Image | None = None,
+    behind_l: Image.Image | None = None,
 ) -> Image.Image:
     client = _get_client()
 
@@ -262,6 +305,7 @@ def _replace_person_openai(
         settings.get("keepPose", True),
         settings.get("matchLighting", True),
         settings.get("personGender"),
+        settings.get("layout", "social"),
     )
 
     campaign_bytes = image_to_png_bytes(fitted_campaign)
@@ -306,4 +350,4 @@ def _replace_person_openai(
 
     # Keep the new person wherever the model drew them; everything it left
     # alone goes back to the exact original pixel. See adaptive_composite.
-    return adaptive_composite(campaign_image, generated_full, mask_l, protect_l)
+    return adaptive_composite(campaign_image, generated_full, mask_l, protect_l, plate, behind_l)

@@ -20,7 +20,12 @@ A campaign may also ship graphics masks for things that overlap the person
                          like a hand-held phone that the person wraps around);
   "<name>.hand.png"    — the original subject's hand, erased from the picture
                          sent to the AI when the new person's own hand should
-                         look different (see erase_for_ai in image_utils.py).
+                         look different (see erase_for_ai in image_utils.py);
+  "<name>.plate.png"   — the campaign with graphics the person hid completed
+                         (scripts/rebuild_profile_headline.py), the base the
+                         new person is composited onto;
+  "<name>.behind.png"  — graphics behind the person on that plate, which the
+                         new person may cover (see adaptive_composite).
 
 
 Hashes are computed from disk at import time rather than hardcoded, so
@@ -41,9 +46,9 @@ logger = logging.getLogger("v80.precomputed_masks")
 
 CAMPAIGN_DIR = Path(__file__).resolve().parent.parent / "static" / "assets" / "campaigns"
 
-_DERIVED_SUFFIXES = (".mask.png", ".protect.png", ".noedit.png", ".hand.png")
+_DERIVED_SUFFIXES = (".mask.png", ".protect.png", ".noedit.png", ".hand.png", ".plate.png", ".behind.png")
 
-# sha256(campaign bytes) -> {"mask": Path, "protect"/"noedit"/"hand": Path | None}
+# sha256(campaign bytes) -> {"mask": Path, "protect"/"noedit"/"hand"/"plate"/"behind": Path | None}
 _index: dict[str, dict[str, Path | None]] | None = None
 
 
@@ -83,6 +88,8 @@ def _build_index() -> dict[str, dict[str, Path | None]]:
             "protect": _existing(protect_path_for(image_path)),
             "noedit": _existing(noedit_path_for(image_path)),
             "hand": _existing(image_path.with_suffix(".hand.png")),
+            "plate": _existing(image_path.with_suffix(".plate.png")),
+            "behind": _existing(image_path.with_suffix(".behind.png")),
         }
 
     logger.info("Loaded %d precomputed campaign mask(s)", len(index))
@@ -103,13 +110,13 @@ def _load(campaign_bytes: bytes, kind: str, size: tuple[int, int]) -> Image.Imag
         return None
 
     try:
-        image = Image.open(path).convert("L")
+        image = Image.open(path).convert("RGB" if kind == "plate" else "L")
     except Exception:  # noqa: BLE001 - a bad mask file should fall back, not 500
         logger.exception("Failed to read precomputed %s %s", kind, path)
         return None
 
     if image.size != size:
-        image = image.resize(size, Image.LANCZOS if kind == "mask" else Image.NEAREST)
+        image = image.resize(size, Image.LANCZOS if kind in ("mask", "plate") else Image.NEAREST)
     return image
 
 
@@ -131,6 +138,30 @@ def lookup_noedit(campaign_bytes: bytes, size: tuple[int, int]) -> Image.Image |
 def lookup_hand(campaign_bytes: bytes, size: tuple[int, int]) -> Image.Image | None:
     """Return the original subject's hand mask for this campaign, or None."""
     return _load(campaign_bytes, "hand", size)
+
+
+def lookup_plate(campaign_bytes: bytes, size: tuple[int, int]) -> Image.Image | None:
+    """Return the campaign's completed-graphics plate (RGB), or None."""
+    return _load(campaign_bytes, "plate", size)
+
+
+def lookup_behind(campaign_bytes: bytes, size: tuple[int, int]) -> Image.Image | None:
+    """Return the mask of graphics behind the person on the plate, or None."""
+    return _load(campaign_bytes, "behind", size)
+
+
+# Campaign images whose prompt layout isn't the default "social" one (see
+# LAYOUTS in ai_edit.py), by file name without extension.
+_LAYOUT_BY_NAME = {"v80-lite-profile": "profile"}
+
+
+def layout_for(campaign_bytes: bytes) -> str:
+    """The prompt layout for these exact campaign bytes ("social" if unknown)."""
+    entry = get_index().get(hashlib.sha256(campaign_bytes).hexdigest())
+    if entry is None:
+        return "social"
+    name = entry["mask"].name.removesuffix(".mask.png")
+    return _LAYOUT_BY_NAME.get(name, "social")
 
 
 def count() -> int:

@@ -203,6 +203,7 @@ function updateDefaultCampaignActiveState() {
   document.querySelectorAll(".default-campaign-card").forEach((card) => {
     const isActive = state.campaignSource === `default-${card.dataset.gender}`;
     card.classList.toggle("active", isActive);
+    card.setAttribute("aria-checked", String(isActive));
   });
 }
 

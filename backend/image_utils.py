@@ -211,6 +211,8 @@ def adaptive_composite(
     generated: Image.Image,
     person_mask_l: Image.Image,
     protect_l: Image.Image | None = None,
+    plate: Image.Image | None = None,
+    behind_l: Image.Image | None = None,
 ) -> Image.Image:
     """
     Merge the AI's image into the original, keeping the AI's new person whole.
@@ -239,11 +241,22 @@ def adaptive_composite(
     3. Clean up, feather, and composite. Everything else — backdrop, the
        phone where the AI left it alone — stays the exact original pixel.
        Protected graphics (panel, headline) always stay original.
+
+    Optional, for graphics the person stands IN FRONT of (Profile's "10000"):
+    `plate` is the campaign with those graphics completed where the old
+    person hid them; it replaces the original as the base, so wherever the
+    new person doesn't reach, the complete graphics show — not the old
+    person. `behind_l` marks those graphics: there the AI's pixel is used
+    only where it is clearly the person (hair or skin — never green, never
+    bright backdrop), so a digit the AI erased or redrew badly falls back to
+    the plate's.
     """
     import numpy as np
     from PIL import ImageFilter
 
     size = original.size
+    if plate is not None:
+        original = plate.convert("RGB").resize(size, Image.LANCZOS)
     orig = np.asarray(original.convert("RGB"), dtype=np.float32)
     gen = np.asarray(generated.convert("RGB").resize(size, Image.LANCZOS), dtype=np.float32)
     old = np.asarray(person_mask_l.convert("L").resize(size, Image.LANCZOS)) > 127
@@ -275,6 +288,47 @@ def adaptive_composite(
 
     alpha = Image.fromarray((region * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(p["feather"]))
     alpha = np.asarray(alpha, dtype=np.float32) / 255.0 * (1.0 - protect_f)
+
+    if behind_l is not None:
+        behind = np.asarray(behind_l.convert("L").resize(size, Image.NEAREST)) > 127
+        # How clearly each AI pixel is the person: not green (a digit) and
+        # not the backdrop — which is bright AND neutral grey. Brightness
+        # alone isn't enough: a lit forehead is as bright as the backdrop,
+        # but skin is warm-toned. Soft, so hair edges blend.
+        r, g, b = gen[..., 0], gen[..., 1], gen[..., 2]
+        not_green = np.clip((10.0 - (g - r)) / 8.0, 0, 1)
+        spread = gen.max(axis=2) - gen.min(axis=2)
+        # Only clearly-backdrop pixels (very bright and neutral) count, so a
+        # bright highlight in the hair is never mistaken for backdrop and
+        # replaced by a digit — that would punch a hole in the head.
+        backdrop = np.clip((gen.mean(axis=2) - 215.0) / 15.0, 0, 1) * np.clip((18.0 - spread) / 8.0, 0, 1)
+        not_backdrop = 1.0 - backdrop
+        person = not_green * not_backdrop
+        # Small or thin "not the person" spots inside the hair are hair too —
+        # a parting, a highlight, a strand the AI tinted green. Left alone,
+        # the digit behind showed through as a green patch on the head. The
+        # digit areas the hair really leaves uncovered are thick strokes, so
+        # they survive this.
+        digit = behind & (person < 0.5)
+        solid = _grow(_shrink(digit, 6), 7) & digit
+        person = np.where(behind & ~solid, np.maximum(person, 1.0), person)
+        person = Image.fromarray((person * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8))
+        person = np.asarray(person, dtype=np.float32) / 255.0
+        alpha = np.where(behind, alpha * person, alpha)
+
+        # Hair kept in front of a digit but still green-tinted (the AI saw the
+        # digit through it): recolour from the nearby hair that isn't.
+        tinted = behind & ~solid & (g - r > 4)
+        if tinted.any():
+            clean = (~tinted & (alpha > 0.5) & (g - r <= 4)).astype(np.float32)
+            weight = np.asarray(Image.fromarray((clean * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(6)),
+                                dtype=np.float32)
+            fixed = gen.copy()
+            for c in range(3):
+                num = Image.fromarray(np.clip(gen[..., c] * clean, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(6))
+                avg = np.asarray(num, dtype=np.float32) / np.maximum(weight / 255.0, 1e-3)
+                fixed[..., c] = np.where(tinted & (weight > 8), avg, gen[..., c])
+            gen = fixed
 
     out = gen * alpha[..., None] + orig * (1.0 - alpha[..., None])
     return Image.fromarray(np.clip(np.rint(out), 0, 255).astype(np.uint8))

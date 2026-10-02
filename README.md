@@ -10,25 +10,26 @@ frontend) so it runs without installing Node.js.
 
 ## How it works
 
-1. **Pick** a built-in V80 campaign image and upload a person reference photo.
+1. **Choose a format** and upload a person reference photo. Each format is a
+   fixed V80 Lite campaign image in `static/assets/campaigns/`:
+   - **Social Media** — `v80-lite.png`, a 1024x1607 portrait poster (default);
+   - **Profile** — `v80-lite-profile.png`, a 1254x1254 square picture.
 2. The backend looks up that campaign's **person mask**, precomputed and
    committed alongside the image (`backend/precomputed_masks.py`). Anything not
    in that set falls back to live `rembg` segmentation
    (`backend/segmentation.py`) where it's installed.
-3. You can open **Edit Mask** (`static/js/maskEditor.js`) to brush/erase the
-   mask by hand — useful for stray hair, hands, or anything auto-detection missed.
-4. Clicking **Replace Person with AI** sends the campaign image, the person
+3. Clicking **Replace Person with AI** sends the campaign image, the person
    photo, and the mask to `POST /api/replace-person`
    (`app.py` → `backend/ai_edit.py`), which calls OpenAI's `images.edit` with
    both images and the mask.
-5. To guarantee the campaign design is untouched pixel-for-pixel outside the
-   mask, the backend **composites** the AI result back onto the original image
-   everywhere the mask is 0 (`backend/image_utils.py:composite_result`) —
-   so even if the model drifts slightly outside the intended area, the final
-   output still matches the original exactly there.
-6. The result is shown in a before/after slider, downloadable as PNG/JPG, and
-   shareable via the Web Share API (with clear manual-upload fallbacks for
-   platforms without a direct image-attach API).
+4. The backend **composites** the AI result back onto the original
+   (`adaptive_composite` in `backend/image_utils.py`): it keeps the new person
+   wherever the AI drew them and restores every other pixel to the exact
+   original. Graphics over the person (the slogan, the battery panel) always
+   stay original.
+5. The result is shown, downloadable, and shareable via the Web Share API
+   (with manual-upload fallbacks for platforms without a direct image-attach
+   API).
 
 **The OpenAI API key is only ever read server-side** (`backend/config.py`,
 loaded from `.env.local`/`.env`) and is never sent to the browser or returned
@@ -68,13 +69,27 @@ together cost ~500MB and ~1GB of peak RAM).
 
 ### Changing a campaign image
 
-After adding or replacing anything in `static/assets/campaigns/`, regenerate
-its mask and commit the result:
+Each campaign image has derived masks next to it: `.mask.png` (the person),
+`.protect.png` (graphics that always stay original), `.noedit.png` (what the
+AI may not edit) and `.hand.png` (the original man's hand, erased from the
+AI's copy for a woman). The Profile image also has `.plate.png` (the picture
+with the "10000" digits completed where the model's hair covered them) and
+`.behind.png` (those digits): the new person is placed in front of the
+completed digits, so they show wherever the new hair doesn't reach. The
+Profile image and its plate come from the designer's file via
+`scripts/rebuild_profile_headline.py`. The graphics masks are measured per
+image in `scripts/make_protect_v80_lite.py`; add or re-measure the image
+there, then:
 
 ```bash
 pip install -r requirements-dev.txt
+python scripts/make_protect_v80_lite.py
 python scripts/make_masks.py
+python scripts/make_protect_v80_lite.py
 ```
+
+The AI prompt (`build_prompt` in `backend/ai_edit.py`) describes the shared
+layout of both images; revisit it if a new image changes the pose or graphics.
 
 Masks are keyed by a SHA-256 of the campaign file's bytes, computed from disk
 at import — so a stale mask can't silently survive a swapped image. If a

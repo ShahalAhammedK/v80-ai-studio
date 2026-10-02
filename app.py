@@ -15,7 +15,7 @@ from backend.config import GEMINI_API_KEY, IMAGE_PROVIDER, OPENAI_API_KEY
 from backend.errors import UserFacingError
 from backend.gender_detect import detect_gender
 from backend.image_utils import image_to_png_bytes, validate_upload
-from backend.precomputed_masks import count as precomputed_mask_count, lookup as lookup_precomputed_mask, lookup_hand, lookup_noedit, lookup_protect
+from backend.precomputed_masks import count as precomputed_mask_count, lookup as lookup_precomputed_mask, layout_for, lookup_behind, lookup_hand, lookup_noedit, lookup_plate, lookup_protect
 from backend.rate_limit import check_rate_limit
 from backend.segmentation import generate_person_mask, is_installed as segmentation_installed
 
@@ -99,6 +99,8 @@ async def replace_person_endpoint(
         parsed_settings = json.loads(settings) if settings else {}
     except json.JSONDecodeError:
         parsed_settings = {}
+    if not isinstance(parsed_settings, dict):
+        parsed_settings = {}
 
     campaign_data = await campaign.read()
     person_data = await person.read()
@@ -129,11 +131,17 @@ async def replace_person_endpoint(
     protect_image = await run_in_threadpool(lookup_protect, campaign_data, campaign_image.size)
     noedit_image = await run_in_threadpool(lookup_noedit, campaign_data, campaign_image.size)
     hand_image = await run_in_threadpool(lookup_hand, campaign_data, campaign_image.size)
+    plate_image = await run_in_threadpool(lookup_plate, campaign_data, campaign_image.size)
+    behind_image = await run_in_threadpool(lookup_behind, campaign_data, campaign_image.size)
+    # Which campaign this is decides parts of the prompt — set here from the
+    # file itself, overriding anything the browser sent.
+    parsed_settings["layout"] = layout_for(campaign_data)
 
     # CPU-bound — run off the event loop so the rest of the site stays
     # responsive during generation.
     result_image = await run_in_threadpool(
-        replace_person, campaign_image, person_image, mask_image, parsed_settings, protect_image, noedit_image, hand_image
+        replace_person, campaign_image, person_image, mask_image, parsed_settings,
+        protect_image, noedit_image, hand_image, plate_image, behind_image,
     )
 
     result_png = image_to_png_bytes(result_image)
